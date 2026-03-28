@@ -1,0 +1,81 @@
+[
+  {
+    "id": "tech_001",
+    "title": "高精度MEMSセンサー製造技術",
+    "content": "精度±0.01%の高精度センサー製造技術を保有。IoT・製造業向けに展開実績あり。小型化・低消費電力化が強み。",
+    "category": "technology",
+    "tags": ["MEMS", "センサー", "IoT", "製造技術", "小型化"]
+  },
+  {
+    "id": "tech_002",
+    "title": "エッジAI処理モジュール",
+    "content": "クラウド非依存のエッジAI推論モジュールを開発済み。リアルタイム異常検知に対応。製造ラインへの組み込み実績3件。",
+    "category": "technology",
+    "tags": ["エッジAI", "異常検知", "リアルタイム", "製造"]
+  },
+  {
+    "id": "fail_001",
+    "title": "スマート農業センサー撤退（2021年）",
+    "content": "農業向けIoTセンサーに参入したが、農家のITリテラシー不足と価格感度の高さにより撤退。",
+    "category": "failure_case",
+    "tags": ["農業", "IoT", "失敗", "撤退"],
+    "failure_reason": "ターゲット顧客のITリテラシー不足と価格競争",
+    "conditions_now": {
+      "condition_1": {
+        "description": "顧客のITリテラシー向上",
+        "status": "未解決",
+        "detail": "農業分野のDX化は遅れており、状況は変わっていない"
+      },
+      "condition_2": {
+        "description": "価格競争力の確保",
+        "status": "未解決",
+        "detail": "中国製低価格品との競争が激化しており改善なし"
+      }
+    }
+  },
+  {
+    "id": "fail_002",
+    "title": "BEMSシステム参入失敗（2020年）",
+    "content": "ビルエネルギー管理システムに参入したが、施工会社との連携不足と初期導入コストの高さで普及せず撤退。",
+    "category": "failure_case",
+    "tags": ["BEMS", "ビル管理", "失敗", "撤退"],
+    "failure_reason": "施工会社との連携不足・高い初期導入コスト",
+    "conditions_now": {
+      "condition_1": {
+        "description": "施工会社との提携体制",
+        "status": "解決済み",
+        "detail": "2023年に全国200社の施工会社と代理店契約を締結済み"
+      },
+      "condition_2": {
+        "description": "初期導入コストの低減",
+        "status": "解決済み",
+        "detail": "SaaS型に移行し、初期費用をゼロにするビジネスモデルに変更"
+      },
+      "condition_3": {
+        "description": "省エネ規制の義務化",
+        "status": "解決済み",
+        "detail": "2024年改正省エネ法により市場需要が強制的に創出された"
+      }
+    }
+  },
+  {
+    "id": "fail_003",
+    "title": "スマートウォッチ参入失敗（2022年）",
+    "content": "一般消費者向けスマートウォッチに参入したが、Apple Watch・Galaxyとの競合に敗れ1年で撤退。",
+    "category": "failure_case",
+    "tags": ["ウェアラブル", "スマートウォッチ", "B2C", "失敗"],
+    "failure_reason": "巨大プレイヤーとのブランド力・エコシステム格差",
+    "conditions_now": {
+      "condition_1": {
+        "description": "ブランド認知度の向上",
+        "status": "未解決",
+        "detail": "B2C市場でのブランド力は依然として弱い"
+      },
+      "condition_2": {
+        "description": "スマートフォンエコシステムとの連携",
+        "status": "未解決",
+        "detail": "Apple/Googleのエコシステムへの参入障壁は変わらず高い"
+      }
+    }
+  }
+]

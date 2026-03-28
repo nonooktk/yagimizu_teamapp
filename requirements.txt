@@ -1,0 +1,6 @@
+streamlit
+chromadb
+networkx
+pyvis
+sentence-transformers
+openai

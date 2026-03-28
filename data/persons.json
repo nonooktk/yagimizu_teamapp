@@ -1,0 +1,38 @@
+[
+  {
+    "id": "person_001",
+    "name": "田中 誠",
+    "role": "IoTソリューション事業部 部長",
+    "expertise": ["IoT", "MEMS", "センサービジネス"],
+    "past_projects": ["tech_001", "fail_001"],
+    "availability": "高",
+    "tags": ["IoT", "センサー", "事業開発", "製造業"]
+  },
+  {
+    "id": "person_002",
+    "name": "鈴木 花子",
+    "role": "AI研究センター リードエンジニア",
+    "expertise": ["エッジAI", "機械学習", "組み込みシステム"],
+    "past_projects": ["tech_002"],
+    "availability": "中",
+    "tags": ["AI", "エッジコンピューティング", "研究開発"]
+  },
+  {
+    "id": "person_003",
+    "name": "佐藤 健",
+    "role": "法人営業部 シニアマネージャー",
+    "expertise": ["B2B営業", "建築業界", "施工会社ネットワーク"],
+    "past_projects": ["fail_002"],
+    "availability": "高",
+    "tags": ["営業", "建築", "BEMS", "施工会社"]
+  },
+  {
+    "id": "person_004",
+    "name": "山田 律子",
+    "role": "医療機器事業推進室 リーダー",
+    "expertise": ["薬機法", "医療機器認証", "病院向け営業"],
+    "past_projects": ["tech_001"],
+    "availability": "中",
+    "tags": ["医療", "薬機法", "認証", "MEMS"]
+  }
+]

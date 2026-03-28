@@ -1,0 +1,13 @@
+[
+  {"source": "person_001", "target": "tech_001", "relation": "担当できる"},
+  {"source": "person_001", "target": "fail_001", "relation": "過去に担当"},
+  {"source": "person_002", "target": "tech_002", "relation": "担当できる"},
+  {"source": "person_003", "target": "fail_002", "relation": "過去に担当"},
+  {"source": "person_004", "target": "tech_001", "relation": "応用できる"},
+  {"source": "tech_001", "target": "market_medical", "relation": "応用できる"},
+  {"source": "tech_001", "target": "market_bems", "relation": "応用できる"},
+  {"source": "tech_002", "target": "market_bems", "relation": "応用できる"},
+  {"source": "fail_002", "target": "market_bems", "relation": "関連する"},
+  {"source": "fail_003", "target": "market_wearable", "relation": "関連する"},
+  {"source": "person_003", "target": "market_bems", "relation": "営業ネットワークあり"}
+]

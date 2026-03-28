@@ -1,0 +1,14 @@
+[
+  {"id": "tech_001", "label": "MEMSセンサー技術", "type": "technology"},
+  {"id": "tech_002", "label": "エッジAIモジュール", "type": "technology"},
+  {"id": "fail_001", "label": "スマート農業（失敗）", "type": "past_project"},
+  {"id": "fail_002", "label": "BEMS参入（失敗→再挑戦）", "type": "past_project"},
+  {"id": "fail_003", "label": "スマートウォッチ（失敗）", "type": "past_project"},
+  {"id": "person_001", "label": "田中 誠", "type": "person"},
+  {"id": "person_002", "label": "鈴木 花子", "type": "person"},
+  {"id": "person_003", "label": "佐藤 健", "type": "person"},
+  {"id": "person_004", "label": "山田 律子", "type": "person"},
+  {"id": "market_bems", "label": "BEMS市場", "type": "market"},
+  {"id": "market_medical", "label": "医療機器市場", "type": "market"},
+  {"id": "market_wearable", "label": "ウェアラブル市場", "type": "market"}
+]
