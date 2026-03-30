@@ -14,6 +14,7 @@ vector_store.py — ChromaDB によるベクトル検索モジュール
 
 import json
 import os
+
 import chromadb
 from sentence_transformers import SentenceTransformer
 
@@ -36,13 +37,29 @@ def load_data() -> list[dict]:
           ...
         ]
     """
-    # TODO: external.json, internal.json, persons.json を読み込む
-    # ヒント: json.load() を使い、各エントリに source フィールドを追加する
+
     all_data = []
+
+    # ファイルごとに (ファイルパス, sourceラベル) のペアを定義
+    files = [
+        (os.path.join(DATA_DIR, "external.json"), "external"),
+        (os.path.join(DATA_DIR, "internal.json"), "internal"),
+        (os.path.join(DATA_DIR, "persons.json"), "persons"),
+    ]
+
+    for filepath, source in files:
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        for item in data:
+            item["source"] = source
+        all_data += data
+
     return all_data
 
 
-def build_collection(client: chromadb.Client, model: SentenceTransformer) -> chromadb.Collection:
+def build_collection(
+    client: chromadb.Client, model: SentenceTransformer
+) -> chromadb.Collection:
     """
     ChromaDBにデータを投入してコレクションを作成・返す。
     既にコレクションが存在する場合はそのまま返す。
@@ -54,10 +71,24 @@ def build_collection(client: chromadb.Client, model: SentenceTransformer) -> chr
     Returns:
         chromadb.Collection: データが投入されたコレクション
     """
-    # TODO: client.get_or_create_collection() でコレクションを取得/作成する
-    # TODO: load_data() でデータを取得し、model.encode() でEmbeddingを生成する
-    # TODO: collection.add() でデータを投入する
-    pass
+
+    collection = client.get_or_create_collection(
+        COLLECTION_NAME, metadata={"hnsw:space": "cosine"}
+    )
+
+    data = load_data()
+
+    ids = [item["id"] for item in data]
+    texts = [item["content"] for item in data]
+    metadatas = [{"source": item["source"]} for item in data]
+
+    embeddings = model.encode(texts)
+
+    collection.add(
+        ids=ids, embeddings=embeddings.tolist(), documents=texts, metadatas=metadatas
+    )
+
+    return collection
 
 
 def search(query: str, n: int = 5) -> list[dict]:
@@ -81,11 +112,37 @@ def search(query: str, n: int = 5) -> list[dict]:
           ...
         ]
     """
-    # TODO: ChromaDBクライアントとモデルを初期化する
-    # TODO: build_collection() でコレクションを取得する
-    # TODO: クエリをベクトルに変換し、collection.query() で検索する
-    # TODO: 結果を上記フォーマットに整形して返す
-    return []
+
+    client = chromadb.Client()
+    model = SentenceTransformer(EMBEDDING_MODEL)
+
+    collection = client.get_or_create_collection(
+        COLLECTION_NAME, metadata={"hnsw:space": "cosine"}
+    )
+    if collection.count() == 0:
+        collection = build_collection(client, model)
+
+    query_vector = model.encode(query).tolist()
+
+    raw = collection.query(query_embeddings=[query_vector], n_results=n)
+
+    results = []
+    ids = raw["ids"][0]
+    documents = raw["documents"][0]
+    distances = raw["distances"][0]
+    metadatas = raw["metadatas"][0]
+
+    for i in range(len(ids)):
+        results.append(
+            {
+                "id": ids[i],
+                "content": documents[i],
+                "score": round(1 - distances[i], 4),
+                "source": metadatas[i]["source"],
+            }
+        )
+
+    return results
 
 
 if __name__ == "__main__":
