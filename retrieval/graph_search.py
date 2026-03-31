@@ -28,11 +28,18 @@ def build_graph() -> nx.Graph:
     Returns:
         nx.Graph: 構築済みのグラフ
     """
-    # TODO: nodes.json を読み込み、グラフにノードを追加する
-    #        ヒント: G.add_node(node["id"], **node) で属性ごと追加できる
-    # TODO: edges.json を読み込み、グラフにエッジを追加する
-    #        ヒント: G.add_edge(edge["source"], edge["target"], relation=edge["relation"])
     G = nx.Graph()
+
+    with open(os.path.join(GRAPH_DIR, "nodes.json"), "r", encoding="utf-8") as f:
+        nodes = json.load(f)
+    for node in nodes:
+        G.add_node(node["id"], **node)
+
+    with open(os.path.join(GRAPH_DIR, "edges.json"), "r", encoding="utf-8") as f:
+        edges = json.load(f)
+    for edge in edges:
+        G.add_edge(edge["source"], edge["target"], relation=edge["relation"])
+
     return G
 
 
@@ -52,10 +59,27 @@ def get_neighbors(node_ids: list[str], graph: nx.Graph = None) -> list[dict]:
           ...
         ]
     """
-    # TODO: graph が None の場合は build_graph() で構築する
-    # TODO: node_ids の各ノードについて G.neighbors() で隣接ノードを取得する
-    # TODO: 重複を除去して返す
-    return []
+    if graph is None:
+        graph = build_graph()
+
+    seen = set()
+    results = []
+    for node_id in node_ids:
+        if node_id not in graph:
+            continue
+        for neighbor in graph.neighbors(node_id):
+            if neighbor in seen:
+                continue
+            seen.add(neighbor)
+            node_attrs = graph.nodes[neighbor]
+            relation = graph[node_id][neighbor].get("relation", "")
+            results.append({
+                "id": neighbor,
+                "label": node_attrs.get("label", neighbor),
+                "type": node_attrs.get("type", ""),
+                "relation": relation,
+            })
+    return results
 
 
 def build_context(vector_results: list[dict], graph: nx.Graph = None) -> dict:
@@ -76,13 +100,33 @@ def build_context(vector_results: list[dict], graph: nx.Graph = None) -> dict:
           "org_context":      "【キーマン】..."
         }
     """
-    # TODO: vector_results を source（external/internal/persons）ごとに仕分ける
-    # TODO: 各グループのノードIDをもとに get_neighbors() で関連ノードを取得する
-    # TODO: 各軸のテキストを組み立てて返す
+    if graph is None:
+        graph = build_graph()
+
+    # source ごとに仕分け
+    external = [r for r in vector_results if r["source"] == "external"]
+    internal = [r for r in vector_results if r["source"] == "internal"]
+    persons  = [r for r in vector_results if r["source"] == "persons"]
+
+    # グラフ隣接から person ノードを追加（persons 検索で漏れた人物を補完）
+    all_ids = [r["id"] for r in vector_results]
+    person_ids = {r["id"] for r in persons}
+    extra_persons = [
+        f"{nb['label']}（{nb['relation']}）"
+        for nb in get_neighbors(all_ids, graph)
+        if nb["type"] == "person" and nb["id"] not in person_ids
+    ]
+
+    # 3軸テキストを組み立て
+    external_context = "【外部情報】\n" + "\n".join(r["content"] for r in external) if external else ""
+    internal_context = "【社内情報】\n" + "\n".join(r["content"] for r in internal) if internal else ""
+    org_lines = [r["content"] for r in persons] + extra_persons
+    org_context = "【キーマン】\n" + "\n".join(org_lines) if org_lines else ""
+
     return {
-        "external_context": "",
-        "internal_context": "",
-        "org_context": ""
+        "external_context": external_context,
+        "internal_context": internal_context,
+        "org_context": org_context,
     }
 
 
