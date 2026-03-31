@@ -9,6 +9,7 @@ analyzer.py — GPT-4o-mini を使った Stage1・Stage2 分析モジュール
 """
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from openai import OpenAI
 from config import OPENAI_API_KEY
 from llm.prompts import (
@@ -21,6 +22,13 @@ from llm.prompts import (
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 MODEL = "gpt-4o-mini"
+
+# 軸名とcontextキーのマッピング
+AXIS_CONTEXT_KEYS = {
+    "external": "external_context",
+    "internal": "internal_context",
+    "org":      "org_context",
+}
 
 
 def run_stage1(theme: str, context: dict) -> dict:
@@ -41,11 +49,26 @@ def run_stage1(theme: str, context: dict) -> dict:
           "org":      {"score": "△", "reason": "...", "key_points": [...]}
         }
     """
-    # TODO: AXIS_NAMES の各軸について、STAGE1_USER_PROMPT_TEMPLATE を使ってプロンプトを組み立てる
-    # TODO: client.chat.completions.create() で GPT-4o-mini を呼び出す
-    # TODO: レスポンスの JSON をパースして返す
-    # ヒント: response_format={"type": "json_object"} を指定するとJSONが確実に返ってくる
-    results = {}
+    def call_gpt(axis: str) -> tuple[str, dict]:
+        prompt = STAGE1_USER_PROMPT_TEMPLATE.format(
+            theme=theme,
+            axis_name=AXIS_NAMES[axis],
+            context=context.get(AXIS_CONTEXT_KEYS[axis], "（情報なし）"),
+        )
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": STAGE1_SYSTEM_PROMPT},
+                {"role": "user",   "content": prompt},
+            ],
+            response_format={"type": "json_object"},
+        )
+        return axis, json.loads(response.choices[0].message.content)
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [executor.submit(call_gpt, axis) for axis in AXIS_CONTEXT_KEYS]
+        results = dict(f.result() for f in futures)
+
     return results
 
 
@@ -78,10 +101,40 @@ def run_stage2(theme: str, stage1_results: dict, context: dict) -> dict:
           "approver_summary": "..."
         }
     """
-    # TODO: STAGE2_USER_PROMPT_TEMPLATE に stage1_results と context を埋め込む
-    # TODO: client.chat.completions.create() で GPT-4o-mini を呼び出す
-    # TODO: レスポンスの JSON をパースして返す
-    return {"proposals": [], "approver_summary": ""}
+    external = stage1_results.get("external", {})
+    internal = stage1_results.get("internal", {})
+    org      = stage1_results.get("org", {})
+
+    full_context = "\n\n".join([
+        context.get("external_context", ""),
+        context.get("internal_context", ""),
+        context.get("org_context", ""),
+    ])
+
+    prompt = STAGE2_USER_PROMPT_TEMPLATE.format(
+        theme=theme,
+        external_score=external.get("score", "－"),
+        external_reason=external.get("reason", ""),
+        external_key_points="、".join(external.get("key_points", [])),
+        internal_score=internal.get("score", "－"),
+        internal_reason=internal.get("reason", ""),
+        internal_key_points="、".join(internal.get("key_points", [])),
+        org_score=org.get("score", "－"),
+        org_reason=org.get("reason", ""),
+        org_key_points="、".join(org.get("key_points", [])),
+        full_context=full_context,
+    )
+
+    response = client.chat.completions.create(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": STAGE2_SYSTEM_PROMPT},
+            {"role": "user",   "content": prompt},
+        ],
+        response_format={"type": "json_object"},
+    )
+
+    return json.loads(response.choices[0].message.content)
 
 
 def analyze(theme: str, context: dict) -> dict:

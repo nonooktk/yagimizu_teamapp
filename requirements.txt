@@ -4,3 +4,4 @@ networkx
 pyvis
 sentence-transformers
 openai
+python-dotenv
