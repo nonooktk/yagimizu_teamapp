@@ -11,12 +11,23 @@ app.py — Streamlit メインアプリ
   streamlit run app.py
 """
 
-import streamlit as st
+import os
+import tempfile
 
-# --- 他モジュールのインポート（実装後に有効化する）---
-# from retrieval.vector_store import search
-# from retrieval.graph_search import build_graph, build_context
-# from llm.analyzer import analyze
+import streamlit as st
+import streamlit.components.v1 as components
+from pyvis.network import Network
+
+from retrieval.vector_store import search
+from retrieval.graph_search import build_graph, build_context, get_neighbors
+
+# .env が未設定でもクラッシュせずエラーを画面表示する
+try:
+    from llm.analyzer import analyze
+    ANALYZER_AVAILABLE = True
+except ValueError as e:
+    ANALYZER_AVAILABLE = False
+    ANALYZER_ERROR = str(e)
 
 # ============================================================
 # ページ設定
@@ -30,7 +41,54 @@ st.set_page_config(
 st.title("PROJECT ZERO")
 st.caption("新規事業判断支援システム — 「この提案、うちでやれるか？今やるべきか？」")
 
+if not ANALYZER_AVAILABLE:
+    st.error(f"設定エラー: {ANALYZER_ERROR}")
+    st.info(".env ファイルに OPENAI_API_KEY を設定してください。")
+    st.stop()
+
 st.divider()
+
+# ============================================================
+# グラフをキャッシュ（起動時に1回だけ構築）
+# ============================================================
+@st.cache_resource
+def get_graph():
+    return build_graph()
+
+
+# ============================================================
+# PyVis グラフ描画
+# ============================================================
+def render_graph(highlighted_ids: set):
+    G = get_graph()
+    net = Network(height="500px", width="100%", bgcolor="#1a1a2e", font_color="white")
+
+    type_colors = {
+        "technology":   "#4CAF50",
+        "person":       "#2196F3",
+        "market":       "#FF9800",
+        "past_project": "#9C27B0",
+    }
+
+    for node_id, attrs in G.nodes(data=True):
+        is_highlighted = node_id in highlighted_ids
+        base_color = type_colors.get(attrs.get("type", ""), "#AAAAAA")
+        net.add_node(
+            node_id,
+            label=attrs.get("label", node_id),
+            color={"background": "#FFD700" if is_highlighted else base_color,
+                   "border":     "#FF4500" if is_highlighted else base_color},
+            size=25 if is_highlighted else 15,
+            title=f"{attrs.get('label', node_id)} ({attrs.get('type', '')})",
+        )
+
+    for src, tgt, attrs in G.edges(data=True):
+        net.add_edge(src, tgt, title=attrs.get("relation", ""), color="#555555")
+
+    # HTML を生成して Streamlit に埋め込む
+    html = net.generate_html()
+    components.html(html, height=520)
+
 
 # ============================================================
 # 入力エリア
@@ -39,7 +97,6 @@ theme = st.text_input(
     "検討テーマを入力してください",
     placeholder="例：ビルエネルギー管理で新事業を考えたい"
 )
-
 run_button = st.button("分析スタート", type="primary")
 
 # ============================================================
@@ -47,74 +104,48 @@ run_button = st.button("分析スタート", type="primary")
 # ============================================================
 if run_button and theme:
     with st.spinner("分析中..."):
-        # TODO: 以下の処理を順番に実装する
-        # 1. search(theme) でベクトル検索
-        # 2. build_context() でContext生成
-        # 3. analyze(theme, context) でStage1・Stage2を実行
-        # 4. 結果を表示する
+        G = get_graph()
+        vector_results = search(theme, n=5)
+        context = build_context(vector_results, graph=G)
+        results = analyze(theme, context, search_results=vector_results)
 
-        # --- 仮データ（実装前の表示確認用）---
-        stage1_dummy = {
-            "external": {"score": "◎", "reason": "市場が急拡大中", "key_points": ["規制追い風", "需要急増"]},
-            "internal": {"score": "○", "reason": "技術的な強みあり", "key_points": ["MEMS技術保有", "失敗条件解決済み"]},
-            "org":      {"score": "○", "reason": "推進できるメンバーいる", "key_points": ["田中部長", "佐藤マネージャー"]}
-        }
-        stage2_dummy = {
-            "proposals": [
-                {
-                    "title": "中小ビル向けSaaS型BEMSサービス",
-                    "summary": "初期費用ゼロのSaaS型で中小ビルオーナーに提供する。既存の施工会社ネットワークで展開。",
-                    "timing_score": "◎",
-                    "timing_reason": "2024年省エネ法義務化により需要が強制的に創出",
-                    "tech_fit_score": "○",
-                    "tech_fit_reason": "MEMSセンサーとエッジAIで差別化可能",
-                    "bottleneck": "ソフトウェア開発人材不足",
-                    "bottleneck_solution": "SIerとのアライアンスで補完",
-                    "next_actions": [
-                        {"person": "佐藤 健", "action": "施工会社パイロット3社の選定"},
-                        {"person": "田中 誠", "action": "センサー仕様の確定"}
-                    ]
-                }
-            ],
-            "approver_summary": "BEMS事業は全条件が解決済みであり、今が再参入の最適タイミングです。GO推奨。"
-        }
-
-        results = {"stage1": stage1_dummy, "stage2": stage2_dummy}
+    stage1 = results["stage1"]
+    stage2 = results["stage2"]
 
     # --- 3軸評価パネル ---
     st.subheader("3軸評価")
     col_ext, col_int, col_org = st.columns(3)
 
     with col_ext:
-        st.metric("外部環境（今やるべきか）", results["stage1"]["external"]["score"])
+        st.metric("外部環境（今やるべきか）", stage1["external"]["score"])
         with st.expander("根拠を見る"):
-            st.write(results["stage1"]["external"]["reason"])
-            for point in results["stage1"]["external"]["key_points"]:
+            st.write(stage1["external"]["reason"])
+            for point in stage1["external"].get("key_points", []):
                 st.write(f"・{point}")
 
     with col_int:
-        st.metric("社内適合（自社でやれるか）", results["stage1"]["internal"]["score"])
+        st.metric("社内適合（自社でやれるか）", stage1["internal"]["score"])
         with st.expander("根拠を見る"):
-            st.write(results["stage1"]["internal"]["reason"])
-            for point in results["stage1"]["internal"]["key_points"]:
+            st.write(stage1["internal"]["reason"])
+            for point in stage1["internal"].get("key_points", []):
                 st.write(f"・{point}")
 
     with col_org:
-        st.metric("組織（誰とやるか）", results["stage1"]["org"]["score"])
+        st.metric("組織（誰とやるか）", stage1["org"]["score"])
         with st.expander("根拠を見る"):
-            st.write(results["stage1"]["org"]["reason"])
-            for point in results["stage1"]["org"]["key_points"]:
+            st.write(stage1["org"]["reason"])
+            for point in stage1["org"].get("key_points", []):
                 st.write(f"・{point}")
 
     st.divider()
 
     # --- 事業提案タブ ---
     st.subheader("事業提案")
-    proposals = results["stage2"]["proposals"]
+    proposals = stage2.get("proposals", [])
 
     if proposals:
         tabs = st.tabs([f"案 {i+1}: {p['title']}" for i, p in enumerate(proposals)])
-        for i, (tab, proposal) in enumerate(zip(tabs, proposals)):
+        for tab, proposal in zip(tabs, proposals):
             with tab:
                 st.write(proposal["summary"])
                 col1, col2 = st.columns(2)
@@ -132,19 +163,60 @@ if run_button and theme:
                 for action in proposal["next_actions"]:
                     st.write(f"- **{action['person']}**: {action['action']}")
 
+    # --- 3C分析（Customer / Competitor / Company）---
+    tier2 = stage2.get("tier2")
+    if tier2:
+        st.divider()
+        st.subheader("3C分析")
+        col_cust, col_comp, col_co = st.columns(3)
+
+        with col_cust:
+            with st.expander("Customer（顧客・市場）", expanded=True):
+                st.write(tier2["customer"]["summary"])
+                for insight in tier2["customer"].get("key_insights", []):
+                    st.write(f"・{insight}")
+
+        with col_comp:
+            with st.expander("Competitor（競合）", expanded=True):
+                st.write(tier2["competitor"]["summary"])
+                st.write(f"**空白地帯**: {tier2['competitor']['white_space']}")
+                st.write(f"**自社優位性**: {tier2['competitor']['our_advantage']}")
+                for insight in tier2["competitor"].get("key_insights", []):
+                    st.write(f"・{insight}")
+
+        with col_co:
+            company = tier2.get("company")
+            if company:
+                with st.expander("Company（自社）", expanded=True):
+                    st.write(company["summary"])
+                    assets = company.get("reusable_assets", [])
+                    if assets:
+                        st.write("**活用可能資産**")
+                        for asset in assets:
+                            st.write(f"・{asset}")
+                    persons = company.get("key_persons", [])
+                    if persons:
+                        st.write("**キーパーソン**")
+                        for p in persons:
+                            st.write(f"・**{p['name']}**: {p['role']}")
+                    if company.get("lessons_learned"):
+                        st.write(f"**過去の学び**: {company['lessons_learned']}")
+
     st.divider()
 
     # --- 承認者サマリー ---
     with st.expander("承認者向けサマリー（黒崎CDO向け）", expanded=True):
-        st.info(results["stage2"]["approver_summary"])
+        st.info(stage2["approver_summary"])
 
     st.divider()
 
-    # --- PyVis グラフ表示エリア（TODO）---
+    # --- PyVis グラフ ---
     st.subheader("関連ノードグラフ")
-    st.info("TODO: PyVis グラフをここに表示する。graph_search.py の実装後に追加する。")
-    # TODO: PyVis で関連ノードをハイライトしたグラフを生成し、
-    #        components.html() で Streamlit に埋め込む
+    result_ids = {r["id"] for r in vector_results}
+    neighbor_ids = {nb["id"] for nb in get_neighbors(list(result_ids), graph=G)}
+    highlighted_ids = result_ids | neighbor_ids
+    render_graph(highlighted_ids)
+    st.caption("🟡 ハイライト: 検索結果・関連ノード　🟢 技術　🔵 人物　🟠 市場　🟣 過去PJ")
 
 elif run_button and not theme:
     st.warning("テーマを入力してください。")
