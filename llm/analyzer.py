@@ -17,7 +17,9 @@ from llm.prompts import (
     STAGE1_SYSTEM_PROMPT,
     STAGE1_USER_PROMPT_TEMPLATE,
     STAGE2_SYSTEM_PROMPT,
-    STAGE2_USER_PROMPT_TEMPLATE,
+    STAGE2_TIER1_USER_PROMPT_TEMPLATE,
+    STAGE2_TIER2_SYSTEM_PROMPT,
+    STAGE2_TIER2_USER_PROMPT_TEMPLATE,
     AXIS_NAMES,
 )
 
@@ -75,60 +77,13 @@ def run_stage1(theme: str, context: dict) -> dict:
     return results
 
 
-def run_stage2(theme: str, stage1_results: dict, context: dict) -> dict:
-    """
-    Stage2: Stage1の結果を統合し、事業案3つ＋承認者サマリーを生成する。
-
-    Args:
-        theme (str): ユーザーが入力したテーマ
-        stage1_results (dict): run_stage1() の返り値
-        context (dict): build_context() が返す3軸のコンテキスト
-
-    Returns:
-        dict: 事業案3つと承認者サマリー
-        例:
-        {
-          "proposals": [
-            {
-              "title": "...",
-              "summary": "...",
-              "timing_score": "◎",
-              "timing_reason": "...",
-              "tech_fit_score": "○",
-              "tech_fit_reason": "...",
-              "bottleneck": "...",
-              "bottleneck_solution": "...",
-              "next_actions": [{"person": "...", "action": "..."}]
-            }
-          ],
-          "approver_summary": "..."
-        }
-    """
+def _call_stage2_tier1(theme: str, stage1_results: dict, full_context_escaped: str, go_no_verdict: str) -> dict:
+    """proposals + approver_summary を生成する（Tier1）"""
     external = stage1_results.get("external", {})
     internal = stage1_results.get("internal", {})
     org      = stage1_results.get("org", {})
 
-    # Stage1スコアからルールベースでGO/NO判定（LLMに委ねず固定する）
-    internal_score = internal.get("score", "－")
-    external_score = external.get("score", "－")
-    if internal_score == "×":
-        go_no_verdict = "NO（社内適合スコアが×のため投資不可）"
-    elif internal_score == "△":
-        go_no_verdict = "条件付きGO（社内適合スコアが△のため、障壁解決を前提に投資検討可）"
-    elif external_score in ("△", "×"):
-        go_no_verdict = "条件付きGO（外部環境スコアが低いため、市場変化を確認しながら進める）"
-    else:
-        go_no_verdict = "GO（全軸スコアが◎○のため即時推進可）"
-
-    full_context = "\n\n".join([
-        context.get("external_context", ""),
-        context.get("internal_context", ""),
-        context.get("org_context", ""),
-    ])
-    # full_contextに{や}が含まれるとformat()が誤動作するためエスケープ
-    full_context_escaped = full_context.replace("{", "{{").replace("}", "}}")
-
-    prompt = STAGE2_USER_PROMPT_TEMPLATE.format(
+    prompt = STAGE2_TIER1_USER_PROMPT_TEMPLATE.format(
         theme=theme,
         go_no_verdict=go_no_verdict,
         external_score=external.get("score", "－"),
@@ -142,7 +97,6 @@ def run_stage2(theme: str, stage1_results: dict, context: dict) -> dict:
         org_key_points="、".join(org.get("key_points", [])),
         full_context=full_context_escaped,
     )
-
     response = client.chat.completions.create(
         model=MODEL,
         messages=[
@@ -151,8 +105,79 @@ def run_stage2(theme: str, stage1_results: dict, context: dict) -> dict:
         ],
         response_format={"type": "json_object"},
     )
-
     return json.loads(response.choices[0].message.content)
+
+
+def _call_stage2_tier2(theme: str, stage1_results: dict, full_context_escaped: str) -> dict:
+    """3C分析（Customer/Competitor/Company）を単独で深く生成する（Tier2）"""
+    external = stage1_results.get("external", {})
+    internal = stage1_results.get("internal", {})
+    org      = stage1_results.get("org", {})
+
+    prompt = STAGE2_TIER2_USER_PROMPT_TEMPLATE.format(
+        theme=theme,
+        external_score=external.get("score", "－"),
+        external_reason=external.get("reason", ""),
+        internal_score=internal.get("score", "－"),
+        internal_reason=internal.get("reason", ""),
+        org_score=org.get("score", "－"),
+        org_reason=org.get("reason", ""),
+        full_context=full_context_escaped,
+    )
+    response = client.chat.completions.create(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": STAGE2_TIER2_SYSTEM_PROMPT},
+            {"role": "user",   "content": prompt},
+        ],
+        response_format={"type": "json_object"},
+    )
+    return json.loads(response.choices[0].message.content)
+
+
+def run_stage2(theme: str, stage1_results: dict, context: dict) -> dict:
+    """
+    Stage2: Tier1（proposals + approver_summary）とTier2（3C分析）を
+    並列で生成して統合する。
+
+    Returns:
+        dict: {
+          "proposals": [...],
+          "approver_summary": "...",
+          "tier2": {"customer": {...}, "competitor": {...}, "company": {...}}
+        }
+    """
+    internal = stage1_results.get("internal", {})
+    external = stage1_results.get("external", {})
+
+    # Stage1スコアからルールベースでGO/NO判定（LLMに委ねず固定する）
+    internal_score = internal.get("score", "－")
+    external_score_val = external.get("score", "－")
+    if internal_score == "×":
+        go_no_verdict = "NO（社内適合スコアが×のため投資不可）"
+    elif internal_score == "△":
+        go_no_verdict = "条件付きGO（社内適合スコアが△のため、障壁解決を前提に投資検討可）"
+    elif external_score_val in ("△", "×"):
+        go_no_verdict = "条件付きGO（外部環境スコアが低いため、市場変化を確認しながら進める）"
+    else:
+        go_no_verdict = "GO（全軸スコアが◎○のため即時推進可）"
+
+    full_context = "\n\n".join([
+        context.get("external_context", ""),
+        context.get("internal_context", ""),
+        context.get("org_context", ""),
+    ])
+    full_context_escaped = full_context.replace("{", "{{").replace("}", "}}")
+
+    # Tier1とTier2を並列実行
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        f_tier1 = executor.submit(_call_stage2_tier1, theme, stage1_results, full_context_escaped, go_no_verdict)
+        f_tier2 = executor.submit(_call_stage2_tier2, theme, stage1_results, full_context_escaped)
+        tier1 = f_tier1.result()
+        tier2 = f_tier2.result()
+
+    tier1["tier2"] = tier2
+    return tier1
 
 
 def _enrich_context_with_full_records(search_results: list, context: dict) -> dict:
