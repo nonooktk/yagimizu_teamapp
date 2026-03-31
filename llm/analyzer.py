@@ -9,6 +9,7 @@ analyzer.py — GPT-4o-mini を使った Stage1・Stage2 分析モジュール
 """
 
 import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 from openai import OpenAI
 from config import OPENAI_API_KEY
@@ -50,10 +51,12 @@ def run_stage1(theme: str, context: dict) -> dict:
         }
     """
     def call_gpt(axis: str) -> tuple[str, dict]:
+        raw_context = context.get(AXIS_CONTEXT_KEYS[axis], "（情報なし）")
+        escaped_context = raw_context.replace("{", "{{").replace("}", "}}")
         prompt = STAGE1_USER_PROMPT_TEMPLATE.format(
             theme=theme,
             axis_name=AXIS_NAMES[axis],
-            context=context.get(AXIS_CONTEXT_KEYS[axis], "（情報なし）"),
+            context=escaped_context,
         )
         response = client.chat.completions.create(
             model=MODEL,
@@ -105,14 +108,29 @@ def run_stage2(theme: str, stage1_results: dict, context: dict) -> dict:
     internal = stage1_results.get("internal", {})
     org      = stage1_results.get("org", {})
 
+    # Stage1スコアからルールベースでGO/NO判定（LLMに委ねず固定する）
+    internal_score = internal.get("score", "－")
+    external_score = external.get("score", "－")
+    if internal_score == "×":
+        go_no_verdict = "NO（社内適合スコアが×のため投資不可）"
+    elif internal_score == "△":
+        go_no_verdict = "条件付きGO（社内適合スコアが△のため、障壁解決を前提に投資検討可）"
+    elif external_score in ("△", "×"):
+        go_no_verdict = "条件付きGO（外部環境スコアが低いため、市場変化を確認しながら進める）"
+    else:
+        go_no_verdict = "GO（全軸スコアが◎○のため即時推進可）"
+
     full_context = "\n\n".join([
         context.get("external_context", ""),
         context.get("internal_context", ""),
         context.get("org_context", ""),
     ])
+    # full_contextに{や}が含まれるとformat()が誤動作するためエスケープ
+    full_context_escaped = full_context.replace("{", "{{").replace("}", "}}")
 
     prompt = STAGE2_USER_PROMPT_TEMPLATE.format(
         theme=theme,
+        go_no_verdict=go_no_verdict,
         external_score=external.get("score", "－"),
         external_reason=external.get("reason", ""),
         external_key_points="、".join(external.get("key_points", [])),
@@ -122,7 +140,7 @@ def run_stage2(theme: str, stage1_results: dict, context: dict) -> dict:
         org_score=org.get("score", "－"),
         org_reason=org.get("reason", ""),
         org_key_points="、".join(org.get("key_points", [])),
-        full_context=full_context,
+        full_context=full_context_escaped,
     )
 
     response = client.chat.completions.create(
@@ -137,7 +155,52 @@ def run_stage2(theme: str, stage1_results: dict, context: dict) -> dict:
     return json.loads(response.choices[0].message.content)
 
 
-def analyze(theme: str, context: dict) -> dict:
+def _enrich_context_with_full_records(search_results: list, context: dict) -> dict:
+    """
+    検索結果のIDに基づいてinternal.jsonから conditions_now / reusable_assets /
+    lessons_learned を取得し、internal_context に追記する。
+    ChromaDB の content フィールドには含まれないGO/NO判断情報をLLMに渡すための処理。
+    """
+    internal_path = os.path.join(os.path.dirname(__file__), "../data/internal.json")
+    with open(internal_path) as f:
+        all_internal = {r["id"]: r for r in json.load(f)}
+
+    enrichment_lines = []
+    for r in search_results:
+        if r.get("source") != "internal":
+            continue
+        record = all_internal.get(r["id"])
+        if not record:
+            continue
+
+        lines = [f"【{record.get('name', r['id'])}】"]
+
+        conditions = record.get("conditions_now", {})
+        if conditions:
+            cond_parts = [f"{k}:{v.get('status','')}" for k, v in conditions.items()]
+            lines.append(f"  再参入条件チェック: {' / '.join(cond_parts)}")
+
+        assets = record.get("reusable_assets", [])
+        if assets:
+            lines.append(f"  活用可能資産: {', '.join(assets)}")
+
+        lessons = record.get("lessons_learned", "")
+        if lessons:
+            lines.append(f"  教訓: {lessons}")
+
+        if len(lines) > 1:
+            enrichment_lines.append("\n".join(lines))
+
+    if enrichment_lines:
+        enrichment = "\n\n".join(enrichment_lines)
+        existing = context.get("internal_context", "")
+        context = dict(context)
+        context["internal_context"] = existing + "\n\n【過去PJ詳細（GO/NO判断用）】\n" + enrichment
+
+    return context
+
+
+def analyze(theme: str, context: dict, search_results: list = None) -> dict:
     """
     Stage1 と Stage2 を順番に実行し、最終結果を返す。
     app.py から呼び出すメイン関数。
@@ -145,6 +208,8 @@ def analyze(theme: str, context: dict) -> dict:
     Args:
         theme (str): ユーザーが入力したテーマ
         context (dict): build_context() が返す3軸のコンテキスト
+        search_results (list, optional): search() の返り値。渡すと conditions_now 等を
+                                         context に自動追記してGO/NO判断精度を上げる。
 
     Returns:
         dict: {
@@ -152,6 +217,8 @@ def analyze(theme: str, context: dict) -> dict:
           "stage2": Stage2の結果
         }
     """
+    if search_results:
+        context = _enrich_context_with_full_records(search_results, context)
     stage1 = run_stage1(theme, context)
     stage2 = run_stage2(theme, stage1, context)
     return {"stage1": stage1, "stage2": stage2}
