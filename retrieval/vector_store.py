@@ -91,6 +91,23 @@ def build_collection(
     return collection
 
 
+# --- モジュールレベルのキャッシュ（初回呼び出し時に1回だけ構築）---
+_client = None
+_model = None
+_collection = None
+
+
+def _get_collection():
+    """ChromaDB クライアント・モデル・コレクションをキャッシュして返す。"""
+    global _client, _model, _collection
+    if _collection is not None:
+        return _collection, _model
+    _client = chromadb.Client()
+    _model = SentenceTransformer(EMBEDDING_MODEL)
+    _collection = build_collection(_client, _model)
+    return _collection, _model
+
+
 def search(query: str, n: int = 5) -> list[dict]:
     """
     クエリ文字列を受け取り、意味的に近いデータを上位N件返す。
@@ -113,14 +130,7 @@ def search(query: str, n: int = 5) -> list[dict]:
         ]
     """
 
-    client = chromadb.Client()
-    model = SentenceTransformer(EMBEDDING_MODEL)
-
-    collection = client.get_or_create_collection(
-        COLLECTION_NAME, metadata={"hnsw:space": "cosine"}
-    )
-    if collection.count() == 0:
-        collection = build_collection(client, model)
+    collection, model = _get_collection()
 
     query_vector = model.encode(query).tolist()
 
