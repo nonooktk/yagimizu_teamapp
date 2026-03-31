@@ -10,6 +10,7 @@ analyzer.py — GPT-4o-mini を使った Stage1・Stage2 分析モジュール
 
 import json
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from openai import OpenAI
 from config import OPENAI_API_KEY
@@ -53,6 +54,7 @@ def run_stage1(theme: str, context: dict) -> dict:
         }
     """
     def call_gpt(axis: str) -> tuple[str, dict]:
+        t_start = time.perf_counter()
         raw_context = context.get(AXIS_CONTEXT_KEYS[axis], "（情報なし）")
         escaped_context = raw_context.replace("{", "{{").replace("}", "}}")
         prompt = STAGE1_USER_PROMPT_TEMPLATE.format(
@@ -68,6 +70,7 @@ def run_stage1(theme: str, context: dict) -> dict:
             ],
             response_format={"type": "json_object"},
         )
+        print(f"[TIMER]   Stage1/{axis}: {time.perf_counter() - t_start:.2f}s", flush=True)
         return axis, json.loads(response.choices[0].message.content)
 
     with ThreadPoolExecutor(max_workers=3) as executor:
@@ -79,6 +82,7 @@ def run_stage1(theme: str, context: dict) -> dict:
 
 def _call_stage2_tier1(theme: str, stage1_results: dict, full_context_escaped: str, go_no_verdict: str) -> dict:
     """proposals + approver_summary を生成する（Tier1）"""
+    t_start = time.perf_counter()
     external = stage1_results.get("external", {})
     internal = stage1_results.get("internal", {})
     org      = stage1_results.get("org", {})
@@ -105,11 +109,13 @@ def _call_stage2_tier1(theme: str, stage1_results: dict, full_context_escaped: s
         ],
         response_format={"type": "json_object"},
     )
+    print(f"[TIMER]   Stage2/Tier1: {time.perf_counter() - t_start:.2f}s", flush=True)
     return json.loads(response.choices[0].message.content)
 
 
 def _call_stage2_tier2(theme: str, stage1_results: dict, full_context_escaped: str) -> dict:
     """3C分析（Customer/Competitor/Company）を単独で深く生成する（Tier2）"""
+    t_start = time.perf_counter()
     external = stage1_results.get("external", {})
     internal = stage1_results.get("internal", {})
     org      = stage1_results.get("org", {})
@@ -132,6 +138,7 @@ def _call_stage2_tier2(theme: str, stage1_results: dict, full_context_escaped: s
         ],
         response_format={"type": "json_object"},
     )
+    print(f"[TIMER]   Stage2/Tier2: {time.perf_counter() - t_start:.2f}s", flush=True)
     return json.loads(response.choices[0].message.content)
 
 
@@ -242,8 +249,20 @@ def analyze(theme: str, context: dict, search_results: list = None) -> dict:
           "stage2": Stage2の結果
         }
     """
+    t0 = time.perf_counter()
+
     if search_results:
         context = _enrich_context_with_full_records(search_results, context)
+    t_enrich = time.perf_counter()
+    print(f"[TIMER] enrich_context: {t_enrich - t0:.2f}s", flush=True)
+
     stage1 = run_stage1(theme, context)
+    t_stage1 = time.perf_counter()
+    print(f"[TIMER] Stage1 (3並列GPT): {t_stage1 - t_enrich:.2f}s", flush=True)
+
     stage2 = run_stage2(theme, stage1, context)
+    t_stage2 = time.perf_counter()
+    print(f"[TIMER] Stage2 (2並列GPT): {t_stage2 - t_stage1:.2f}s", flush=True)
+
+    print(f"[TIMER] 合計: {t_stage2 - t0:.2f}s", flush=True)
     return {"stage1": stage1, "stage2": stage2}
