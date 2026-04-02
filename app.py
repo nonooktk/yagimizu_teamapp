@@ -3,7 +3,7 @@ app.py — Streamlit メインアプリ (UX改修版・3C縦積みレイアウ�
 
 担当: Cさん（UI担当）/ PMO監修
 """
-
+import base64
 import os
 import tempfile
 
@@ -31,9 +31,135 @@ except ImportError:
     ANALYZER_AVAILABLE = False
     ANALYZER_ERROR = "analyzerモジュールが見つかりません。"
 
+
 # ============================================================
-# ページ設定
+# CSS
 # ============================================================
+CUSTOM_CSS = """
+<style>
+/* ===== 全体背景 ===== */
+html, body, [data-testid="stAppViewContainer"], .stApp {
+  background: #131B4A !important;
+  color: #FFFFFF;
+}
+
+/* ===== メインテキスト（紺背景側） ===== */
+h1, h2, h3, h4, h5, h6,
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stMarkdownContainer"] li,
+[data-testid="stMarkdownContainer"] span,
+[data-testid="stWidgetLabel"] {
+  color: #FFFFFF !important;
+}
+
+/* 明示的に使い分けたいクラス */
+.normal-text {
+  color: #FFFFFF !important;
+}
+
+.sub-text {
+  color: #000000 !important;
+}
+
+/* ===== 入力欄（紺背景上） ===== */
+input, textarea {
+  background-color: #1C245A !important;
+  color: #FFFFFF !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #C9D1FF !important;
+}
+
+/* ===== file_uploader 本体 ===== */
+[data-testid="stFileUploader"] {
+  color: #FFFFFF !important;
+}
+
+/* アップロードエリアの白背景 */
+[data-testid="stFileUploaderDropzone"] {
+  background: #F3F4F6 !important;
+  border: 1px solid #D1D5DB !important;
+}
+
+/* 白背景側の文字を黒系にする */
+[data-testid="stFileUploaderDropzone"] * {
+  color: #111827 !important;
+}
+
+/* Browse files ボタン相当 */
+[data-testid="stFileUploaderDropzone"] button,
+[data-testid="stBaseButton-secondary"] {
+  background: #FFFFFF !important;
+  color: #111827 !important;
+  border: 1px solid #C7C9D1 !important;
+}
+
+/* ボタン */
+.stButton > button,
+[data-testid="stFormSubmitButton"] button {
+  background-color: #4CAF50 !important;
+  color: #FFFFFF !important;
+  border-radius: 8px;
+  border: none;
+}
+
+/* 成功/注意メッセージ視認性 */
+[data-testid="stAlert"] {
+  border-radius: 10px;
+}
+
+/* ===== ヘッダー右画像 ===== */
+.hero-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  margin: 0auto;
+}
+
+.hero-image {
+  width: 120%;
+  height: 260px;
+  object-fit: cover;
+}
+
+.hero-overlay {
+  position: absolute;
+  left: 24px;
+  bottom: 20px;
+  color: white !important;
+  font-size: 2rem;
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: 0.08em;
+  text-shadow: 0 3px 12px rgba(0,0,0,0.55);
+  line-height: 1.2;
+}
+
+.hero-sub {
+  position: absolute;
+  left: 24px;
+  top: 20px;
+  color: rgba(255,255,255,0.92) !important;
+  font-size: 0.95rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.45);
+}
+</style>
+"""
+
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+# ============================================================
+# ヘッダー
+# ============================================================
+
+def get_image_base64(image_path: str) -> str:
+    with open(image_path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
 st.set_page_config(
     page_title="PROJECT ZERO — 新規事業判断支援",
     page_icon="🎯",
@@ -41,10 +167,26 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.title("PROJECT ZERO")
-st.caption(
-    "新規事業判断支援ダッシュボード — 「この提案、うちでやれるか？今やるべきか？」"
-)
+banner_path = "factory.png"  # ここを使いたい画像ファイル名にする
+banner_b64 = get_image_base64(banner_path)
+
+col_left, col_right = st.columns([1, 2])
+
+with col_left:
+    st.markdown("<h1 style='margin-bottom:0.2rem;'>PROJECT ZERO</h1>", unsafe_allow_html=True)
+    st.markdown('<div class="hero-sub">新規事業判断支援ダッシュボード —「この提案、うちでやれるか？今やるべきか？」</div>',
+    unsafe_allow_html=True
+    )
+with col_right:
+    st.markdown(
+        f"""
+        <div class="hero-wrap">
+            <img src="data:image/png;base64,{banner_b64}" class="hero-image">
+            <h1 class="hero-overlay">Technozeron</h1>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 if not ANALYZER_AVAILABLE:
     st.error(f"設定エラー: {ANALYZER_ERROR}")
@@ -52,7 +194,6 @@ if not ANALYZER_AVAILABLE:
         ".env ファイルに OPENAI_API_KEY を設定するか、モジュールパスを確認してください。"
     )
     st.stop()
-
 
 # ============================================================
 # グラフをキャッシュ（起動時に1回だけ構築）
@@ -103,11 +244,15 @@ def render_graph(highlighted_ids: set):
 st.markdown("### 💡 ビジネスアイデアの入力")
 with st.form("idea_form"):
 
-    # --- PDFアップロード機能を追加 ---
-    st.markdown("**📁 既存の企画書・関連資料をアップロード（任意）**")
+      # --- PDFアップロード機能 ---
+    st.markdown(
+        '<p class="normal-text"><strong>📁 既存の企画書・関連資料をアップロード（任意）</strong></p>',
+        unsafe_allow_html=True,
+    )
     uploaded_file = st.file_uploader(
         "PDFファイルを添付", type=["pdf"], label_visibility="collapsed"
     )
+
 
     # ファイルがアップロードされた場合のUIフィードバック（モック）
     if uploaded_file is not None:
