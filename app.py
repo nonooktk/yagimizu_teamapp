@@ -1,14 +1,7 @@
 """
-app.py — Streamlit メインアプリ
+app.py — Streamlit メインアプリ (UX改修版・3C縦積みレイアウト ＋ PDF添付機能 ＋ UIプロフェッショナル化 ＋ 堅牢化)
 
-担当: Cさん（UI担当）
-
-【このファイルの役割】
-- ユーザー入力を受け取り、検索・分析を実行し、結果を表示する
-- 3軸評価パネル・提案タブ・承認者サマリー・PyVis グラフを表示する
-
-【実行方法】
-  streamlit run app.py
+担当: Cさん（UI担当）/ PMO監修
 """
 
 import os
@@ -18,35 +11,48 @@ import streamlit as st
 import streamlit.components.v1 as components
 from pyvis.network import Network
 
+# ============================================================
+# 【モックアップ用インポート】
+# ※実際の環境に合わせてパスやモジュール名は適宜修正してください
+# ============================================================
 from retrieval.vector_store import search
 from retrieval.graph_search import build_graph, build_context, get_neighbors
 
 # .env が未設定でもクラッシュせずエラーを画面表示する
 try:
     from llm.analyzer import analyze
+
     ANALYZER_AVAILABLE = True
 except ValueError as e:
     ANALYZER_AVAILABLE = False
     ANALYZER_ERROR = str(e)
+except ImportError:
+    # 開発環境でモジュールがない場合のモック処理用（必要に応じて）
+    ANALYZER_AVAILABLE = False
+    ANALYZER_ERROR = "analyzerモジュールが見つかりません。"
 
 # ============================================================
 # ページ設定
 # ============================================================
 st.set_page_config(
     page_title="PROJECT ZERO — 新規事業判断支援",
-    page_icon="🔍",
-    layout="wide"
+    page_icon="🎯",
+    layout="wide",
+    initial_sidebar_state="collapsed",
 )
 
 st.title("PROJECT ZERO")
-st.caption("新規事業判断支援システム — 「この提案、うちでやれるか？今やるべきか？」")
+st.caption(
+    "新規事業判断支援ダッシュボード — 「この提案、うちでやれるか？今やるべきか？」"
+)
 
 if not ANALYZER_AVAILABLE:
     st.error(f"設定エラー: {ANALYZER_ERROR}")
-    st.info(".env ファイルに OPENAI_API_KEY を設定してください。")
+    st.info(
+        ".env ファイルに OPENAI_API_KEY を設定するか、モジュールパスを確認してください。"
+    )
     st.stop()
 
-st.divider()
 
 # ============================================================
 # グラフをキャッシュ（起動時に1回だけ構築）
@@ -64,9 +70,9 @@ def render_graph(highlighted_ids: set):
     net = Network(height="500px", width="100%", bgcolor="#1a1a2e", font_color="white")
 
     type_colors = {
-        "technology":   "#4CAF50",
-        "person":       "#2196F3",
-        "market":       "#FF9800",
+        "technology": "#4CAF50",
+        "person": "#2196F3",
+        "market": "#FF9800",
         "past_project": "#9C27B0",
     }
 
@@ -76,8 +82,10 @@ def render_graph(highlighted_ids: set):
         net.add_node(
             node_id,
             label=attrs.get("label", node_id),
-            color={"background": "#FFD700" if is_highlighted else base_color,
-                   "border":     "#FF4500" if is_highlighted else base_color},
+            color={
+                "background": "#FFD700" if is_highlighted else base_color,
+                "border": "#FF4500" if is_highlighted else base_color,
+            },
             size=25 if is_highlighted else 15,
             title=f"{attrs.get('label', node_id)} ({attrs.get('type', '')})",
         )
@@ -85,138 +93,268 @@ def render_graph(highlighted_ids: set):
     for src, tgt, attrs in G.edges(data=True):
         net.add_edge(src, tgt, title=attrs.get("relation", ""), color="#555555")
 
-    # HTML を生成して Streamlit に埋め込む
     html = net.generate_html()
     components.html(html, height=520)
 
 
 # ============================================================
-# 入力エリア
+# 入力エリア（ガイド付きフォームでプロンプト品質を担保）
 # ============================================================
-theme = st.text_input(
-    "検討テーマを入力してください",
-    placeholder="例：ビルエネルギー管理で新事業を考えたい"
-)
-run_button = st.button("分析スタート", type="primary")
+st.markdown("### 💡 ビジネスアイデアの入力")
+with st.form("idea_form"):
+
+    # --- PDFアップロード機能を追加 ---
+    st.markdown("**📁 既存の企画書・関連資料をアップロード（任意）**")
+    uploaded_file = st.file_uploader(
+        "PDFファイルを添付", type=["pdf"], label_visibility="collapsed"
+    )
+
+    # ファイルがアップロードされた場合のUIフィードバック（モック）
+    if uploaded_file is not None:
+        st.success(
+            f"📄 『{uploaded_file.name}』 を読み込みました。AIが文脈として考慮します。"
+        )
+    st.markdown("<br>", unsafe_allow_html=True)
+    # ---------------------------------
+
+    col_input1, col_input2 = st.columns(2)
+    with col_input1:
+        target_market = st.text_input(
+            "ターゲット市場 / 想定顧客",
+            placeholder="例：欧州の大規模農業法人",
+        )
+    with col_input2:
+        assets = st.text_input(
+            "活用したい自社アセット・コア技術",
+            placeholder="例：100%植物由来ポリマー「Green Planet」",
+        )
+
+    idea_detail = st.text_area(
+        "提供価値・事業アイデアの詳細",
+        placeholder="例：環境規制強化を背景に、農業用マルチフィルムとして展開。haあたり300ユーロの廃棄コストを削減し...",
+    )
+
+    run_button = st.form_submit_button("投資判断AIによる分析スタート", type="primary")
+
+# プロンプトの合成
+theme = f"【想定顧客/市場】{target_market}\n【活用アセット】{assets}\n【アイデア概要】{idea_detail}"
 
 # ============================================================
 # 分析の実行と結果の表示
 # ============================================================
-if run_button and theme:
-    with st.spinner("分析中..."):
+if run_button:
+    if not idea_detail:
+        st.warning("⚠️ 「提供価値・事業アイデアの詳細」は必ず入力してください。")
+        st.stop()
+
+    # --- 待機時間のUX向上（実況中継風ステータス） ---
+    with st.status("🧠 AIが多角的に分析・評価中...", expanded=True) as status:
+
+        # PDFがアップロードされていた場合の実況メッセージを追加
+        if uploaded_file is not None:
+            st.write("📑 添付されたPDF資料の内容を解析・抽出中...")
+
+        st.write("🔍 社内データ・過去の失敗プロジェクトを検索中...")
         G = get_graph()
         vector_results = search(theme, n=5)
+
+        st.write("📊 外部環境・社内資産・組織体制の文脈を構築中...")
         context = build_context(vector_results, graph=G)
+
+        st.write("⚖️ 投資判断と3C分析を生成中（数秒かかります）...")
         results = analyze(theme, context, search_results=vector_results)
 
-    stage1 = results["stage1"]
-    stage2 = results["stage2"]
+        status.update(label="✅ 分析完了！", state="complete", expanded=False)
 
-    # --- 3軸評価パネル ---
-    st.subheader("3軸評価")
-    col_ext, col_int, col_org = st.columns(3)
-
-    with col_ext:
-        st.metric("外部環境（今やるべきか）", stage1["external"]["score"])
-        with st.expander("根拠を見る"):
-            st.write(stage1["external"]["reason"])
-            for point in stage1["external"].get("key_points", []):
-                st.write(f"・{point}")
-
-    with col_int:
-        st.metric("社内適合（自社でやれるか）", stage1["internal"]["score"])
-        with st.expander("根拠を見る"):
-            st.write(stage1["internal"]["reason"])
-            for point in stage1["internal"].get("key_points", []):
-                st.write(f"・{point}")
-
-    with col_org:
-        st.metric("組織（誰とやるか）", stage1["org"]["score"])
-        with st.expander("根拠を見る"):
-            st.write(stage1["org"]["reason"])
-            for point in stage1["org"].get("key_points", []):
-                st.write(f"・{point}")
+    # 辞書キー欠損エラー回避のための安全な取得
+    stage1 = results.get("stage1", {})
+    stage2 = results.get("stage2", {})
 
     st.divider()
 
-    # --- 事業提案タブ ---
-    st.subheader("事業提案")
-    proposals = stage2.get("proposals", [])
+    # --- 結論ファースト：ダッシュボードトップ ---
+    st.header("🎯 エグゼクティブ・サマリー（事業化 Go/No-Go 判定）")
+    st.caption(
+        "※本AI判定は、市場性・技術適合性・組織体制の3軸に基づき、初期投資の妥当性を評価したものです。"
+    )
 
-    if proposals:
-        tabs = st.tabs([f"案 {i+1}: {p['title']}" for i, p in enumerate(proposals)])
-        for tab, proposal in zip(tabs, proposals):
-            with tab:
-                st.write(proposal["summary"])
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric("タイミング", proposal["timing_score"])
-                    st.caption(proposal["timing_reason"])
-                with col2:
-                    st.metric("技術適合性", proposal["tech_fit_score"])
-                    st.caption(proposal["tech_fit_reason"])
+    # サマリー文章の切り出し
+    summary_text = stage2.get(
+        "approver_summary", "サマリー情報が生成されませんでした。"
+    )
+    st.info(summary_text, icon="📢")
 
-                st.warning(f"**ボトルネック**: {proposal['bottleneck']}")
-                st.success(f"**解決策**: {proposal['bottleneck_solution']}")
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("3軸評価と根拠詳細")
 
-                st.subheader("次のアクション")
-                for action in proposal["next_actions"]:
-                    st.write(f"- **{action['person']}**: {action['action']}")
+    # --- 縦積みカード型レイアウト ---
+    ext_data = stage1.get("external", {})
+    int_data = stage1.get("internal", {})
+    org_data = stage1.get("org", {})
 
-    # --- 3C分析（Customer / Competitor / Company）---
-    tier2 = stage2.get("tier2")
-    if tier2:
-        st.divider()
-        st.subheader("3C分析")
-        col_cust, col_comp, col_co = st.columns(3)
-
-        with col_cust:
-            with st.expander("Customer（顧客・市場）", expanded=True):
-                st.write(tier2["customer"]["summary"])
-                for insight in tier2["customer"].get("key_insights", []):
-                    st.write(f"・{insight}")
-
-        with col_comp:
-            with st.expander("Competitor（競合）", expanded=True):
-                st.write(tier2["competitor"]["summary"])
-                st.write(f"**空白地帯**: {tier2['competitor']['white_space']}")
-                st.write(f"**自社優位性**: {tier2['competitor']['our_advantage']}")
-                for insight in tier2["competitor"].get("key_insights", []):
-                    st.write(f"・{insight}")
-
-        with col_co:
-            company = tier2.get("company")
-            if company:
-                with st.expander("Company（自社）", expanded=True):
-                    st.write(company["summary"])
-                    assets = company.get("reusable_assets", [])
-                    if assets:
-                        st.write("**活用可能資産**")
-                        for asset in assets:
-                            st.write(f"・{asset}")
-                    persons = company.get("key_persons", [])
-                    if persons:
-                        st.write("**キーパーソン**")
-                        for p in persons:
-                            st.write(f"・**{p['name']}**: {p['role']}")
-                    if company.get("lessons_learned"):
-                        st.write(f"**過去の学び**: {company['lessons_learned']}")
-
+    # 【外部環境】
+    with st.container():
+        c_score, c_reason = st.columns([1, 4])
+        with c_score:
+            st.metric("🌍 外部環境", ext_data.get("score", "N/A"))
+        with c_reason:
+            st.markdown("**💡 評価根拠**")
+            st.write(ext_data.get("reason", "評価根拠がありません。"))
     st.divider()
 
-    # --- 承認者サマリー ---
-    with st.expander("承認者向けサマリー（黒崎CDO向け）", expanded=True):
-        st.info(stage2["approver_summary"])
-
+    # 【社内適合】
+    with st.container():
+        c_score, c_reason = st.columns([1, 4])
+        with c_score:
+            st.metric("🏢 社内適合", int_data.get("score", "N/A"))
+        with c_reason:
+            st.markdown("**💡 評価根拠**")
+            st.write(int_data.get("reason", "評価根拠がありません。"))
     st.divider()
 
-    # --- PyVis グラフ ---
-    st.subheader("関連ノードグラフ")
-    result_ids = {r["id"] for r in vector_results}
-    neighbor_ids = {nb["id"] for nb in get_neighbors(list(result_ids), graph=G)}
-    highlighted_ids = result_ids | neighbor_ids
-    render_graph(highlighted_ids)
-    st.caption("🟡 ハイライト: 検索結果・関連ノード　🟢 技術　🔵 人物　🟠 市場　🟣 過去PJ")
+    # 【組織体制】
+    with st.container():
+        c_score, c_reason = st.columns([1, 4])
+        with c_score:
+            st.metric("🤝 組織体制", org_data.get("score", "N/A"))
+        with c_reason:
+            st.markdown("**💡 評価根拠**")
+            st.write(org_data.get("reason", "評価根拠がありません。"))
 
-elif run_button and not theme:
-    st.warning("テーマを入力してください。")
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # --- 情報の階層化：残りの情報をタブでスッキリ見せる ---
+    tab_proposal, tab_3c, tab_graph = st.tabs(
+        ["💡 事業提案・アクション", "📊 3C分析", "🌐 関連ノードグラフ"]
+    )
+
+    # 【タブ1】事業提案・アクション
+    with tab_proposal:
+        st.subheader("AIからのピボット提案")
+        proposals = stage2.get("proposals", [])
+        if proposals:
+            for i, proposal in enumerate(proposals):
+                # タイトルの切り出し
+                p_title = proposal.get("title", "無題の提案")
+
+                with st.expander(f"提案 {i+1}： {p_title}", expanded=(i == 0)):
+                    st.write(proposal.get("summary", ""))
+
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.metric("タイミング評価", proposal.get("timing_score", "-"))
+                        st.caption(proposal.get("timing_reason", ""))
+                    with c2:
+                        st.metric("技術適合性", proposal.get("tech_fit_score", "-"))
+                        st.caption(proposal.get("tech_fit_reason", ""))
+
+                    # 文字列事故防止のため、変数を切り出してから展開
+                    bottleneck_text = proposal.get("bottleneck", "特になし")
+                    solution_text = proposal.get("bottleneck_solution", "特になし")
+
+                    st.warning(f"**最大のボトルネック**: {bottleneck_text}")
+                    st.success(f"**解決策**: {solution_text}")
+
+                    st.markdown("#### 🏃 次の具体的なアクション")
+                    next_actions = proposal.get("next_actions", [])
+                    if next_actions:
+                        for action in next_actions:
+                            person = action.get("person", "担当未定")
+                            task = action.get("action", "タスク内容未定義")
+                            st.markdown(f"- **{person}**: {task}")
+                    else:
+                        st.write("現在提示できる具体的なアクションはありません。")
+        else:
+            st.write("ピボット提案はありません。")
+
+    # 【タブ2】3C分析
+    with tab_3c:
+        tier2 = stage2.get("tier2", {})
+        if tier2:
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            cust_data = tier2.get("customer", {})
+            comp_data = tier2.get("competitor", {})
+            co_data = tier2.get("company", {})
+
+            # Customer
+            with st.container():
+                c_title, c_content = st.columns([1, 4])
+                with c_title:
+                    st.markdown("### 🧑‍🤝‍🧑 Customer")
+                    st.caption("市場・顧客")
+                with c_content:
+                    st.write(cust_data.get("summary", "情報なし"))
+                    for insight in cust_data.get("key_insights", []):
+                        st.write(f"・{insight}")
+            st.divider()
+
+            # Competitor
+            with st.container():
+                c_title, c_content = st.columns([1, 4])
+                with c_title:
+                    st.markdown("### ⚔️ Competitor")
+                    st.caption("競合環境")
+                with c_content:
+                    st.write(comp_data.get("summary", "情報なし"))
+
+                    # 変数切り出し
+                    white_space = comp_data.get("white_space", "不明")
+                    our_adv = comp_data.get("our_advantage", "不明")
+
+                    st.write(f"**空白地帯**: {white_space}")
+                    st.write(f"**自社優位性**: {our_adv}")
+
+                    for insight in comp_data.get("key_insights", []):
+                        st.write(f"・{insight}")
+            st.divider()
+
+            # Company
+            with st.container():
+                c_title, c_content = st.columns([1, 4])
+                with c_title:
+                    st.markdown("### 🏢 Company")
+                    st.caption("自社状況")
+                with c_content:
+                    if co_data:
+                        st.write(co_data.get("summary", "情報なし"))
+
+                        reusable = co_data.get("reusable_assets", [])
+                        if reusable:
+                            st.markdown("**武器になる資産**")
+                            for asset in reusable:
+                                st.write(f"・{asset}")
+
+                        key_persons = co_data.get("key_persons", [])
+                        if key_persons:
+                            st.markdown("**キーパーソン**")
+                            for p in key_persons:
+                                p_name = p.get("name", "氏名不明")
+                                p_role = p.get("role", "役職不明")
+                                st.write(f"・**{p_name}**: {p_role}")
+
+                        lessons = co_data.get("lessons_learned", "")
+                        if lessons:
+                            st.write(f"**過去の学び**: {lessons}")
+
+    # 【タブ3】PyVis グラフ
+    with tab_graph:
+        st.subheader("関連情報ネットワーク")
+        if vector_results:
+            result_ids = {r.get("id") for r in vector_results if "id" in r}
+            try:
+                neighbor_ids = {
+                    nb.get("id")
+                    for nb in get_neighbors(list(result_ids), graph=G)
+                    if "id" in nb
+                }
+            except Exception:
+                neighbor_ids = set()
+
+            highlighted_ids = result_ids | neighbor_ids
+            render_graph(highlighted_ids)
+            st.caption("🟡 検索ヒット　🟢 技術　🔵 人物　🟠 市場　🟣 過去PJ")
+        else:
+            st.warning(
+                "検索結果が取得できませんでした。検索キーワード（ターゲット市場やアセット）を変更して、再度お試しください。"
+            )

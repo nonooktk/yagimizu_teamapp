@@ -31,7 +31,7 @@ MODEL = "gpt-4o-mini"
 AXIS_CONTEXT_KEYS = {
     "external": "external_context",
     "internal": "internal_context",
-    "org":      "org_context",
+    "org": "org_context",
 }
 
 
@@ -53,6 +53,7 @@ def run_stage1(theme: str, context: dict) -> dict:
           "org":      {"score": "△", "reason": "...", "key_points": [...]}
         }
     """
+
     def call_gpt(axis: str) -> tuple[str, dict]:
         t_start = time.perf_counter()
         raw_context = context.get(AXIS_CONTEXT_KEYS[axis], "（情報なし）")
@@ -66,11 +67,13 @@ def run_stage1(theme: str, context: dict) -> dict:
             model=MODEL,
             messages=[
                 {"role": "system", "content": STAGE1_SYSTEM_PROMPT},
-                {"role": "user",   "content": prompt},
+                {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
         )
-        print(f"[TIMER]   Stage1/{axis}: {time.perf_counter() - t_start:.2f}s", flush=True)
+        print(
+            f"[TIMER]   Stage1/{axis}: {time.perf_counter() - t_start:.2f}s", flush=True
+        )
         return axis, json.loads(response.choices[0].message.content)
 
     with ThreadPoolExecutor(max_workers=3) as executor:
@@ -80,12 +83,14 @@ def run_stage1(theme: str, context: dict) -> dict:
     return results
 
 
-def _call_stage2_tier1(theme: str, stage1_results: dict, full_context_escaped: str, go_no_verdict: str) -> dict:
+def _call_stage2_tier1(
+    theme: str, stage1_results: dict, full_context_escaped: str, go_no_verdict: str
+) -> dict:
     """proposals + approver_summary を生成する（Tier1）"""
     t_start = time.perf_counter()
     external = stage1_results.get("external", {})
     internal = stage1_results.get("internal", {})
-    org      = stage1_results.get("org", {})
+    org = stage1_results.get("org", {})
 
     prompt = STAGE2_TIER1_USER_PROMPT_TEMPLATE.format(
         theme=theme,
@@ -105,7 +110,7 @@ def _call_stage2_tier1(theme: str, stage1_results: dict, full_context_escaped: s
         model=MODEL,
         messages=[
             {"role": "system", "content": STAGE2_SYSTEM_PROMPT},
-            {"role": "user",   "content": prompt},
+            {"role": "user", "content": prompt},
         ],
         response_format={"type": "json_object"},
     )
@@ -113,12 +118,14 @@ def _call_stage2_tier1(theme: str, stage1_results: dict, full_context_escaped: s
     return json.loads(response.choices[0].message.content)
 
 
-def _call_stage2_tier2(theme: str, stage1_results: dict, full_context_escaped: str) -> dict:
+def _call_stage2_tier2(
+    theme: str, stage1_results: dict, full_context_escaped: str
+) -> dict:
     """3C分析（Customer/Competitor/Company）を単独で深く生成する（Tier2）"""
     t_start = time.perf_counter()
     external = stage1_results.get("external", {})
     internal = stage1_results.get("internal", {})
-    org      = stage1_results.get("org", {})
+    org = stage1_results.get("org", {})
 
     prompt = STAGE2_TIER2_USER_PROMPT_TEMPLATE.format(
         theme=theme,
@@ -134,7 +141,7 @@ def _call_stage2_tier2(theme: str, stage1_results: dict, full_context_escaped: s
         model=MODEL,
         messages=[
             {"role": "system", "content": STAGE2_TIER2_SYSTEM_PROMPT},
-            {"role": "user",   "content": prompt},
+            {"role": "user", "content": prompt},
         ],
         response_format={"type": "json_object"},
     )
@@ -163,23 +170,37 @@ def run_stage2(theme: str, stage1_results: dict, context: dict) -> dict:
     if internal_score == "×":
         go_no_verdict = "NO（社内適合スコアが×のため投資不可）"
     elif internal_score == "△":
-        go_no_verdict = "条件付きGO（社内適合スコアが△のため、障壁解決を前提に投資検討可）"
+        go_no_verdict = (
+            "条件付きGO（社内適合スコアが△のため、障壁解決を前提に投資検討可）"
+        )
     elif external_score_val in ("△", "×"):
-        go_no_verdict = "条件付きGO（外部環境スコアが低いため、市場変化を確認しながら進める）"
+        go_no_verdict = (
+            "条件付きGO（外部環境スコアが低いため、市場変化を確認しながら進める）"
+        )
     else:
         go_no_verdict = "GO（全軸スコアが◎○のため即時推進可）"
 
-    full_context = "\n\n".join([
-        context.get("external_context", ""),
-        context.get("internal_context", ""),
-        context.get("org_context", ""),
-    ])
+    full_context = "\n\n".join(
+        [
+            context.get("external_context", ""),
+            context.get("internal_context", ""),
+            context.get("org_context", ""),
+        ]
+    )
     full_context_escaped = full_context.replace("{", "{{").replace("}", "}}")
 
     # Tier1とTier2を並列実行
     with ThreadPoolExecutor(max_workers=2) as executor:
-        f_tier1 = executor.submit(_call_stage2_tier1, theme, stage1_results, full_context_escaped, go_no_verdict)
-        f_tier2 = executor.submit(_call_stage2_tier2, theme, stage1_results, full_context_escaped)
+        f_tier1 = executor.submit(
+            _call_stage2_tier1,
+            theme,
+            stage1_results,
+            full_context_escaped,
+            go_no_verdict,
+        )
+        f_tier2 = executor.submit(
+            _call_stage2_tier2, theme, stage1_results, full_context_escaped
+        )
         tier1 = f_tier1.result()
         tier2 = f_tier2.result()
 
@@ -194,7 +215,7 @@ def _enrich_context_with_full_records(search_results: list, context: dict) -> di
     ChromaDB の content フィールドには含まれないGO/NO判断情報をLLMに渡すための処理。
     """
     internal_path = os.path.join(os.path.dirname(__file__), "../data/internal.json")
-    with open(internal_path) as f:
+    with open(internal_path, encoding="utf-8") as f:
         all_internal = {r["id"]: r for r in json.load(f)}
 
     enrichment_lines = []
@@ -227,7 +248,9 @@ def _enrich_context_with_full_records(search_results: list, context: dict) -> di
         enrichment = "\n\n".join(enrichment_lines)
         existing = context.get("internal_context", "")
         context = dict(context)
-        context["internal_context"] = existing + "\n\n【過去PJ詳細（GO/NO判断用）】\n" + enrichment
+        context["internal_context"] = (
+            existing + "\n\n【過去PJ詳細（GO/NO判断用）】\n" + enrichment
+        )
 
     return context
 
