@@ -167,26 +167,42 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-banner_path = "factory.png"  # ここを使いたい画像ファイル名にする
-banner_b64 = get_image_base64(banner_path)
+#banner_path = "factory.png"  # ここを使いたい画像ファイル名にする
+#banner_b64 = get_image_base64(banner_path)
 
-col_left, col_right = st.columns([1, 2])
+#st.markdown(
+#        f"""
+#        <div class="hero-wrap">
+#            <img src="data:image/png;base64,{banner_b64}" class="hero-image">
+#            <h1 class="hero-overlay">Technozeron</h1>
+#        </div>
+#        """,
+#        unsafe_allow_html=True,
+#   )
 
-with col_left:
-    st.markdown("<h1 style='margin-bottom:0.2rem;'>PROJECT ZERO</h1>", unsafe_allow_html=True)
-    st.markdown('<div class="hero-sub">新規事業判断支援ダッシュボード —「この提案、うちでやれるか？今やるべきか？」</div>',
-    unsafe_allow_html=True
-    )
-with col_right:
-    st.markdown(
-        f"""
-        <div class="hero-wrap">
-            <img src="data:image/png;base64,{banner_b64}" class="hero-image">
-            <h1 class="hero-overlay">Technozeron</h1>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+col_left, col_center, col_right = st.columns([1,3,1])
+
+with col_center:
+    st.image("factory.png", use_container_width=True)
+
+#col_left, col_right = st.columns([1, 2])
+
+#with col_left:
+#    st.markdown("<h1 style='margin-bottom:0.2rem;'>PROJECT ZERO</h1>", unsafe_allow_html=True)
+#    st.markdown('<div class="hero-sub">新規事業判断支援ダッシュボード —「この提案、うちでやれるか？今やるべきか？」</div>',
+#    unsafe_allow_html=True
+#    )
+#with col_right:
+#    st.markdown(
+#        f"""
+#        <div class="hero-wrap">
+#            <img src="data:image/png;base64,{banner_b64}" class="hero-image">
+#            <h1 class="hero-overlay">Technozeron</h1>
+#        </div>
+#        """,
+#        unsafe_allow_html=True,
+#    )
+
 
 if not ANALYZER_AVAILABLE:
     st.error(f"設定エラー: {ANALYZER_ERROR}")
