@@ -239,6 +239,103 @@ hr {
   font-weight: 700 !important;
 }
 
+/* ===== ① 上部ヘッダーバー（Deploy等） ===== */
+[data-testid="stHeader"],
+[data-testid="stHeader"] *,
+[data-testid="stToolbar"],
+[data-testid="stToolbar"] *,
+header[data-testid="stHeader"],
+.stToolbar,
+.stToolbar * {
+  background-color: #FFFFFF !important;
+  color: #111827 !important;
+}
+
+[data-testid="stHeader"] button,
+[data-testid="stToolbar"] button {
+  color: #111827 !important;
+  background: transparent !important;
+}
+
+[data-testid="stHeader"] button:hover,
+[data-testid="stToolbar"] button:hover {
+  background: #F3F4F6 !important;
+  color: #111827 !important;
+}
+
+/* ===== ② text_input 入力完了後も含めた黒背景・白文字を防ぐ ===== */
+[data-baseweb="input"],
+[data-baseweb="base-input"],
+[data-baseweb="textarea"],
+[data-baseweb="input"] > div,
+[data-baseweb="base-input"] > div,
+[data-baseweb="textarea"] > div,
+[data-baseweb="input"]:focus-within,
+[data-baseweb="base-input"]:focus-within,
+[data-baseweb="textarea"]:focus-within,
+[data-baseweb="input"]:not(:focus-within),
+[data-baseweb="base-input"]:not(:focus-within),
+[data-baseweb="textarea"]:not(:focus-within) {
+  background-color: #FFFFFF !important;
+  color: #111827 !important;
+}
+
+[data-baseweb="input"] input,
+[data-baseweb="base-input"] input,
+[data-baseweb="textarea"] textarea,
+[data-baseweb="input"] input:focus,
+[data-baseweb="base-input"] input:focus,
+[data-baseweb="textarea"] textarea:focus,
+[data-baseweb="input"] input:not(:focus),
+[data-baseweb="base-input"] input:not(:focus),
+[data-baseweb="textarea"] textarea:not(:focus) {
+  background-color: #FFFFFF !important;
+  color: #111827 !important;
+  caret-color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+}
+
+/* autofill時のブラウザ上書きを防ぐ */
+[data-baseweb="input"] input:-webkit-autofill,
+[data-baseweb="base-input"] input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px #FFFFFF inset !important;
+  -webkit-text-fill-color: #111827 !important;
+}
+
+/* ===== placeholder（例：）をグレーに ===== */
+input::placeholder,
+textarea::placeholder {
+  color: #9CA3AF !important;
+  -webkit-text-fill-color: #9CA3AF !important;
+  opacity: 1 !important;
+}
+
+/* ===== ④ expander トグルのホバー・通常時の黒背景を防ぐ ===== */
+[data-testid="stExpander"],
+[data-testid="stExpander"] > details,
+[data-testid="stExpander"] > details > summary {
+  background-color: #FFFFFF !important;
+  color: #111827 !important;
+}
+
+[data-testid="stExpander"] > details > summary:hover {
+  background-color: #F3F4F6 !important;
+  color: #111827 !important;
+}
+
+[data-testid="stExpander"] > details[open] > summary {
+  background-color: #FFFFFF !important;
+  color: #111827 !important;
+}
+
+[data-testid="stExpander"] > details > summary * {
+  color: #111827 !important;
+}
+
+[data-testid="stExpander"] > details > summary:hover * {
+  color: #111827 !important;
+}
+
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
@@ -403,7 +500,7 @@ if run_button:
         )
 
         with tab_proposal:
-            st.subheader("AIからのピボット提案")
+            st.subheader("AIからの提案")
             proposals = stage2.get("proposals", [])
             if proposals:
                 for i, proposal in enumerate(proposals):
